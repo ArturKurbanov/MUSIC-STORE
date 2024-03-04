@@ -1,4 +1,4 @@
-module web-servise-gin
+module ALL_PROJECT
 
 go 1.21.3
 
