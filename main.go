@@ -76,17 +76,6 @@ func NewMemoryStorage() MemoryStorage {
 	return MemoryStorage{albums: albums}
 }
 
-// type HttpError struct {
-// 	Error string `json:"error"`
-// }
-
-// Заполняем альбом
-var albums = []album{
-	{ID: "1", Title: "Blue Train", Artist: "John Coltraine", Price: 56.99},
-	{ID: "2", Title: "Jeru", Artist: "Gerry Mullingan", Price: 17.99},
-	{ID: "3", Title: "Sarah Vaughan and Clifford Brown", Artist: "Sarah Vaughan", Price: 39.99},
-}
-
 func getAlbums(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, storage.Read())
 }
@@ -134,7 +123,7 @@ func updateAlbumById(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, album)
 }
 
-func getRouter() *gin.Engine { // gin.Engine - это основной компонент фреймворка Gin, который представляет собой маршрутизатор (router) для обработки HTTP-запросов и управления маршрутами (routes) веб-приложения.
+func getRouter() *gin.Engine {
 	router := gin.Default()
 	router.GET("/albums", getAlbums)
 	router.GET("/albums/:id", getAlbumById)
