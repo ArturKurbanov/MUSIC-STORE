@@ -63,11 +63,11 @@ func TestDeleteNotFound(t *testing.T) {
 
 func TestUpdateAlbumsNotFound(t *testing.T) {
 	albumId := "999"
-	request, _ := http.NewRequest("PUT", "/albums/"+albumId, strings.NewReader(""))
+	request, _ := http.NewRequest("PUT", "/albums/"+albumId, strings.NewReader(`{"title": "test"}`))
 	w := httptest.NewRecorder()
 	HandleRequest(w, request)
 	if w.Code != http.StatusNotFound {
-		t.Fatal("status must be 404")
+		t.Fatal("status must be 404", w.Code)
 	}
 }
 

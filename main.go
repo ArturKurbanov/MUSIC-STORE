@@ -1,10 +1,19 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
+
+type Storage interface {
+	Create() album
+	Read() album
+	ReadOne() album
+	Upgate() album
+	Delete() album
+}
 
 // Создаем альбом
 type album struct {
@@ -14,9 +23,62 @@ type album struct {
 	Price  float64 `json:"price"`
 }
 
-type error struct {
-	Error string `json:"error"`
+type MemoryStorage struct {
+	albums []album
 }
+
+var storage = NewMemoryStorage()
+
+func (s MemoryStorage) Create(am album) album {
+	s.albums = append(s.albums, am)
+	return am
+}
+
+func (s MemoryStorage) ReadOne(id string) (album, error) {
+	for _, a := range s.albums {
+		if a.ID == id {
+			return a, nil
+		}
+	}
+	return album{}, errors.New("album not found")
+}
+
+func (s MemoryStorage) Read() []album {
+	return s.albums
+}
+
+func (s MemoryStorage) Upgate(id string, newAlbum album) (album, error) {
+	for i := range s.albums {
+		if s.albums[i].ID == id {
+			s.albums[i] = newAlbum
+			return s.albums[i], nil
+		}
+	}
+	return album{}, errors.New("album not found")
+}
+
+func (s MemoryStorage) Delete(id string) error {
+	for i, a := range s.albums {
+		if a.ID == id {
+			s.albums = append(s.albums[:i], s.albums[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New("album not found")
+}
+
+func NewMemoryStorage() MemoryStorage {
+	var albums = []album{
+		{ID: "1", Title: "Blue Train", Artist: "John Coltraine", Price: 56.99},
+		{ID: "2", Title: "Jeru", Artist: "Gerry Mullingan", Price: 17.99},
+		{ID: "3", Title: "Sarah Vaughan and Clifford Brown", Artist: "Sarah Vaughan", Price: 39.99},
+	}
+	return MemoryStorage{albums: albums}
+}
+
+// type HttpError struct {
+// 	Error string `json:"error"`
+// }
 
 // Заполняем альбом
 var albums = []album{
@@ -26,55 +88,50 @@ var albums = []album{
 }
 
 func getAlbums(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, albums)
+	c.IndentedJSON(http.StatusOK, storage.Read())
 }
 
 func postAlbums(c *gin.Context) {
 	var newAlbum album
-
 	if err := c.BindJSON(&newAlbum); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, error{"bad_request"})
+		c.IndentedJSON(http.StatusBadRequest, gin.H{"massage": "album not found"})
 		return
 	}
-	albums = append(albums, newAlbum)
+	storage.Create(newAlbum)
 	c.IndentedJSON(http.StatusCreated, newAlbum)
 }
 
 func getAlbumById(c *gin.Context) {
 	id := c.Param("id")
-	for _, a := range albums {
-		if a.ID == id {
-			c.IndentedJSON(http.StatusOK, a)
-			return
-		}
+	album, err := storage.ReadOne(id)
+	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"massage": "album not found"})
+		return
 	}
-	c.IndentedJSON(http.StatusNotFound, gin.H{"massage": "album not found"})
+	c.IndentedJSON(http.StatusOK, album)
 }
 
 func deleteAlbumById(c *gin.Context) {
 	id := c.Param("id")
-
-	for i, a := range albums {
-		if a.ID == id {
-			albums = append(albums[:i], albums[i+1:]...)
-			c.IndentedJSON(http.StatusNoContent, a)
-			return
-		}
+	err := storage.Delete(id)
+	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"massage": "album not found"})
+		return
 	}
-	c.IndentedJSON(http.StatusNotFound, gin.H{"massage": "album not found"})
+	c.IndentedJSON(http.StatusNoContent, album{})
 }
 
 func updateAlbumById(c *gin.Context) {
 	id := c.Param("id")
+	var newAlbum album
+	c.BindJSON(&newAlbum)
 
-	for i := range albums {
-		if albums[i].ID == id {
-			c.BindJSON(&albums[i])
-			c.IndentedJSON(http.StatusOK, albums[i])
-			return
-		}
+	album, err := storage.Upgate(id, newAlbum)
+	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"massage": "album not found"})
+		return
 	}
-	c.IndentedJSON(http.StatusNotFound, gin.H{"massage": "album not found"})
+	c.IndentedJSON(http.StatusOK, album)
 }
 
 func getRouter() *gin.Engine { // gin.Engine - это основной компонент фреймворка Gin, который представляет собой маршрутизатор (router) для обработки HTTP-запросов и управления маршрутами (routes) веб-приложения.
