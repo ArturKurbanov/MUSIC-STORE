@@ -1,19 +1,10 @@
 package main
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
-
-type Storage interface {
-	Create() album
-	Read() album
-	ReadOne() album
-	Upgate() album
-	Delete() album
-}
 
 // Создаем альбом
 type album struct {
@@ -23,58 +14,7 @@ type album struct {
 	Price  float64 `json:"price"`
 }
 
-type MemoryStorage struct {
-	albums []album
-}
-
-var storage = NewMemoryStorage()
-
-func (s MemoryStorage) Create(am album) album {
-	s.albums = append(s.albums, am)
-	return am
-}
-
-func (s MemoryStorage) ReadOne(id string) (album, error) {
-	for _, a := range s.albums {
-		if a.ID == id {
-			return a, nil
-		}
-	}
-	return album{}, errors.New("album not found")
-}
-
-func (s MemoryStorage) Read() []album {
-	return s.albums
-}
-
-func (s MemoryStorage) Upgate(id string, newAlbum album) (album, error) {
-	for i := range s.albums {
-		if s.albums[i].ID == id {
-			s.albums[i] = newAlbum
-			return s.albums[i], nil
-		}
-	}
-	return album{}, errors.New("album not found")
-}
-
-func (s MemoryStorage) Delete(id string) error {
-	for i, a := range s.albums {
-		if a.ID == id {
-			s.albums = append(s.albums[:i], s.albums[i+1:]...)
-			return nil
-		}
-	}
-	return errors.New("album not found")
-}
-
-func NewMemoryStorage() MemoryStorage {
-	var albums = []album{
-		{ID: "1", Title: "Blue Train", Artist: "John Coltraine", Price: 56.99},
-		{ID: "2", Title: "Jeru", Artist: "Gerry Mullingan", Price: 17.99},
-		{ID: "3", Title: "Sarah Vaughan and Clifford Brown", Artist: "Sarah Vaughan", Price: 39.99},
-	}
-	return MemoryStorage{albums: albums}
-}
+var storage = NewStorage()
 
 func getAlbums(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, storage.Read())
@@ -115,7 +55,7 @@ func updateAlbumById(c *gin.Context) {
 	var newAlbum album
 	c.BindJSON(&newAlbum)
 
-	album, err := storage.Upgate(id, newAlbum)
+	album, err := storage.Update(id, newAlbum)
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"massage": "album not found"})
 		return
@@ -125,6 +65,7 @@ func updateAlbumById(c *gin.Context) {
 
 func getRouter() *gin.Engine {
 	router := gin.Default()
+	gin.SetMode(gin.ReleaseMode)
 	router.GET("/albums", getAlbums)
 	router.GET("/albums/:id", getAlbumById)
 	router.DELETE("/albums/:id", deleteAlbumById)

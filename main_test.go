@@ -12,6 +12,12 @@ func HandleRequest(w *httptest.ResponseRecorder, r *http.Request) {
 	router.ServeHTTP(w, r)
 }
 
+func createTestAlbum() album {
+	testAlbum := album{ID: "2", Title: "test", Artist: "test", Price: 1.00}
+	storage.Create(testAlbum)
+	return testAlbum
+}
+
 func TestAlbumsList(t *testing.T) {
 	request, _ := http.NewRequest("GET", "/albums", strings.NewReader(""))
 	w := httptest.NewRecorder()
@@ -22,8 +28,8 @@ func TestAlbumsList(t *testing.T) {
 }
 
 func TestAlbumsDetail(t *testing.T) {
-	albumId := "1"
-	request, _ := http.NewRequest("GET", "/albums/"+albumId, strings.NewReader(""))
+	testAlbum := createTestAlbum()
+	request, _ := http.NewRequest("GET", "/albums/"+testAlbum.ID, strings.NewReader(""))
 	w := httptest.NewRecorder()
 	HandleRequest(w, request)
 	if w.Code != http.StatusOK {
@@ -42,8 +48,8 @@ func TestAlbumsNotFound(t *testing.T) {
 }
 
 func TestDeleteAlbums(t *testing.T) {
-	albumId := "1"
-	request, _ := http.NewRequest("DELETE", "/albums/"+albumId, strings.NewReader(""))
+	testAlbum := createTestAlbum()
+	request, _ := http.NewRequest("DELETE", "/albums/"+testAlbum.ID, strings.NewReader(""))
 	w := httptest.NewRecorder()
 	HandleRequest(w, request)
 	if w.Code != http.StatusNoContent {
@@ -72,8 +78,8 @@ func TestUpdateAlbumsNotFound(t *testing.T) {
 }
 
 func TestUpdateAlbums(t *testing.T) {
-	albumId := "2"
-	request, _ := http.NewRequest("PUT", "/albums/"+albumId, strings.NewReader(`{"title": "test"}`))
+	testAlbum := createTestAlbum()
+	request, _ := http.NewRequest("PUT", "/albums/"+testAlbum.ID, strings.NewReader(`{"title": "test"}`))
 	w := httptest.NewRecorder()
 	HandleRequest(w, request)
 	if w.Code != http.StatusOK {
@@ -91,9 +97,10 @@ func TestCreateBedStructure(t *testing.T) {
 }
 
 func TestCreateAlbums(t *testing.T) {
-	request, _ := http.NewRequest("POST", "/albums", strings.NewReader(`{"id": "4", "title": "The Modern Sound of Betty Carter", "artict": "Betty Carter", "price": 39.99}`))
+	request, _ := http.NewRequest("POST", "/albums", strings.NewReader(`{"id": "4", "title": "The Modern Sound of Betty Carter", "artist": "Betty Carter", "price": 39.99}`))
 	w := httptest.NewRecorder()
 	HandleRequest(w, request)
+
 	if w.Code != http.StatusCreated {
 		t.Fatal("status must be 201", w.Code)
 	}
