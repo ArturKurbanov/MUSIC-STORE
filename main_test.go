@@ -13,7 +13,7 @@ func HandleRequest(w *httptest.ResponseRecorder, r *http.Request) {
 }
 
 func createTestAlbum() album {
-	testAlbum := album{ID: "2", Title: "test", Artist: "test", Price: 1.00}
+	testAlbum := album{ID: "2", Title: "Blue Train", Artist: "John Coltraine", Price: 56.99}
 	storage.Create(testAlbum)
 	return testAlbum
 }

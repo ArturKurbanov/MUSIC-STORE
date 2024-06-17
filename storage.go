@@ -2,15 +2,20 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
+	"time"
+
+	"github.com/go-redis/redis"
 
 	_ "github.com/lib/pq"
 )
 
 type Storage interface {
 	Create(album) album
-	Read() []album
+	Read(rc *RedisCache) ([]album, error)
 	ReadOne(id string) (album, error)
 	Update(id string, a album) (album, error)
 	Delete(id string) error
@@ -68,7 +73,9 @@ func NewMemoryStorage() MemoryStorage {
 }
 
 type PostgresStorage struct {
-	db *sql.DB
+	//	redisClient *redis.Client
+	cacheTTL time.Duration // Время жизни кеша
+	db       *sql.DB
 }
 
 func (p PostgresStorage) CreateSchema() error {
@@ -108,17 +115,43 @@ func (p PostgresStorage) ReadOne(id string) (album, error) {
 	return album, nil
 }
 
-func (p PostgresStorage) Read() []album {
-	var albums []album
-	rows, _ := p.db.Query("select * from albums")
-	defer rows.Close()
+func (p PostgresStorage) Read(rc *RedisCache) ([]album, error) {
+	// Попытка получения данных из Redis
+	cachedAlbums, err := rc.redisClient.Get("albums").Result()
+	if err == redis.Nil {
+		// Данные не найдены в Redis, получаем из базы данных
+		var albums []album
+		rows, _ := p.db.Query("select * from albums")
+		defer rows.Close()
 
-	for rows.Next() {
-		var a album
-		rows.Scan(&a.ID, &a.Title, &a.Artist, &a.Price)
-		albums = append(albums, a)
+		for rows.Next() {
+			var a album
+			rows.Scan(&a.ID, &a.Title, &a.Artist, &a.Price)
+			albums = append(albums, a)
+		}
+		// Кэшируем полученные данные в Redis
+		cachedData, err := json.Marshal(albums)
+		if err != nil {
+			return nil, err
+		}
+
+		err = rc.redisClient.Set("albums", cachedData, p.cacheTTL).Err()
+		if err != nil {
+			return nil, err
+		}
+		return albums, nil
+	} else if err != nil {
+		// Ошибка Redis, логируем и получаем данные из базы данных
+		fmt.Println("Ошибка Redis:", err)
+		return nil, err
 	}
-	return albums
+	// Данные найдены в Redis, десериализуем и возвращаем
+	var albums []album
+	if err := json.Unmarshal([]byte(cachedAlbums), &albums); err != nil {
+		return nil, err
+	}
+	return albums, nil
+
 }
 
 func (p PostgresStorage) Update(id string, a album) (album, error) {
