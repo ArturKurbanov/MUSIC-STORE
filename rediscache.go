@@ -25,6 +25,7 @@ func initRedis() {
 		panic(err)
 	}
 	fmt.Println("Connected to Redis:", pong)
+	//return NewPostgresStorage(redisClient) // Передайте Redis-клиент
 }
 
 type RedisCache struct {

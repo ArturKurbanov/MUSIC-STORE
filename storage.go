@@ -15,7 +15,7 @@ import (
 
 type Storage interface {
 	Create(album) album
-	Read(rc *RedisCache) ([]album, error)
+	Read() []album
 	ReadOne(id string) (album, error)
 	Update(id string, a album) (album, error)
 	Delete(id string) error
@@ -73,9 +73,9 @@ func NewMemoryStorage() MemoryStorage {
 }
 
 type PostgresStorage struct {
-	//	redisClient *redis.Client
-	cacheTTL time.Duration // Время жизни кеша
-	db       *sql.DB
+	redisClient *redis.Client
+	cacheTTL    time.Duration // Время жизни кеша
+	db          *sql.DB
 }
 
 func (p PostgresStorage) CreateSchema() error {
@@ -115,9 +115,9 @@ func (p PostgresStorage) ReadOne(id string) (album, error) {
 	return album, nil
 }
 
-func (p PostgresStorage) Read(rc *RedisCache) ([]album, error) {
+func (p PostgresStorage) Read() []album {
 	// Попытка получения данных из Redis
-	cachedAlbums, err := rc.redisClient.Get("albums").Result()
+	cachedAlbums, err := p.redisClient.Get("albums").Result()
 	if err == redis.Nil {
 		// Данные не найдены в Redis, получаем из базы данных
 		var albums []album
@@ -132,25 +132,25 @@ func (p PostgresStorage) Read(rc *RedisCache) ([]album, error) {
 		// Кэшируем полученные данные в Redis
 		cachedData, err := json.Marshal(albums)
 		if err != nil {
-			return nil, err
+			return nil
 		}
 
-		err = rc.redisClient.Set("albums", cachedData, p.cacheTTL).Err()
+		err = p.redisClient.Set("albums", cachedData, p.cacheTTL).Err()
 		if err != nil {
-			return nil, err
+			return nil
 		}
-		return albums, nil
+		return albums
 	} else if err != nil {
 		// Ошибка Redis, логируем и получаем данные из базы данных
 		fmt.Println("Ошибка Redis:", err)
-		return nil, err
+		return nil
 	}
 	// Данные найдены в Redis, десериализуем и возвращаем
 	var albums []album
 	if err := json.Unmarshal([]byte(cachedAlbums), &albums); err != nil {
-		return nil, err
+		return nil
 	}
-	return albums, nil
+	return albums
 
 }
 

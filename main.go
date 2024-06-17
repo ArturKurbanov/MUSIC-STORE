@@ -17,14 +17,7 @@ type album struct {
 var storage = NewStorage()
 
 func getAlbums(c *gin.Context) {
-	redisCache := &RedisCache{} // Создание экземпляра RedisCache
-	albums, err := storage.Read(redisCache)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.IndentedJSON(http.StatusOK, albums)
+	c.IndentedJSON(http.StatusOK, storage.Read())
 }
 
 func postAlbums(c *gin.Context) {
