@@ -3,3 +3,5 @@
 
 ## Run redis
 `docker run -d -it --name some-redis -e REDIS_PASSWORD=pass -e REDIS_PORT=6379 -v /data/redis:/data -p 6379:6379 redis`
+
+//`docker run --name some-redis -p 6379:6379 redis` 
