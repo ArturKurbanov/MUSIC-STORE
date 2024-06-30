@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,11 @@ type album struct {
 var storage = NewStorage()
 
 func getAlbums(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, storage.Read())
+	albums, err := storage.Read()
+	if err != nil {
+		log.Fatal(err)
+	}
+	c.IndentedJSON(http.StatusOK, albums) // storage.Read()
 }
 
 func postAlbums(c *gin.Context) {
@@ -63,7 +68,7 @@ func updateAlbumById(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, album)
 }
 
-func getRouter() *gin.Engine {
+func getRouter() *gin.Engine { // storage Storage
 	router := gin.Default()
 	gin.SetMode(gin.ReleaseMode)
 	router.GET("/albums", getAlbums)
@@ -75,6 +80,6 @@ func getRouter() *gin.Engine {
 }
 
 func main() {
-	router := getRouter()
+	router := getRouter() // storage
 	router.Run("localhost:8080")
 }

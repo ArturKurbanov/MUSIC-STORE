@@ -2,15 +2,14 @@ curl http://localhost:8080/albums
 
 ###
 
-curl http://localhost:8080/albums/1
+curl http://localhost:8080/albums/5
 
 ###
 
 curl -X "DELETE" http://localhost:8080/albums/4
-
 ###
 
-curl -X "PUT" http://localhost:8080/albums/1 \
+curl -X "PUT" http://localhost:8080/albums/4 \
     --include \
     --header "Content-Type: application/json" \
     --request "POST" \
@@ -22,4 +21,4 @@ curl http://localhost:8080/albums \
     --include \
     --header "Content-Type: application/json" \
     --request "POST" \
-    --data '{"id": "4", "title": "The Modern Sound of Betty Carter", "artist": "Betty Carter", "price": 39.99}'
+    --data '{"id": "5", "title": "The Modern Sound of Betty Carter", "artist": "Betty Carter", "price": 39.99}'

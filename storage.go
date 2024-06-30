@@ -4,9 +4,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
+
+	"os"
+
+	//"fmt"
 	"log"
 	"time"
+
+	//"context"
 
 	"github.com/go-redis/redis"
 
@@ -14,8 +19,8 @@ import (
 )
 
 type Storage interface {
-	Create(album) album
-	Read() []album
+	Create(album) (album, error)
+	Read() ([]album, error)
 	ReadOne(id string) (album, error)
 	Update(id string, a album) (album, error)
 	Delete(id string) error
@@ -83,13 +88,15 @@ func (p PostgresStorage) CreateSchema() error {
 	return err
 }
 
-func NewPostgresStorage() PostgresStorage {
+func NewPostgresStorage(redisClient *redis.Client) PostgresStorage {
 	connStr := "user=user dbname=db password=pass sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	storage := PostgresStorage{db: db}
+	storage := PostgresStorage{db: db,
+		redisClient: redisClient,
+	}
 	err = storage.CreateSchema()
 	if err != nil {
 		log.Fatal(err)
@@ -97,73 +104,142 @@ func NewPostgresStorage() PostgresStorage {
 	return storage
 }
 
-func (p PostgresStorage) Create(am album) album {
-	p.db.Exec("insert into albums(ID, Title, Artist, Price) values($1, $2, $3, $4)", am.ID, am.Title, am.Artist, am.Price)
-	return am
+func (p PostgresStorage) Create(am album) (album, error) {
+	_, err := p.db.Exec("insert into albums(ID, Title, Artist, Price) values($1, $2, $3, $4)", am.ID, am.Title, am.Artist, am.Price)
+	if err != nil {
+		return am, err // Возвращаем ошибку, если она произошла
+	}
+	// Сохранение нового альбома в Redis
+	jsonAlbum, err := json.Marshal(am)
+	if err != nil {
+		log.Println("Error caching album in Redis:", err)
+		// Можно вернуть ошибку, если нужно, чтобы Create всегда возвращал ошибку при проблемах с Redis
+		// return am, err
+	}
+	err = p.redisClient.Set("album:"+am.ID, jsonAlbum, p.cacheTTL).Err()
+	if err != nil {
+		log.Println("Error caching album in Redis:", err)
+		// Можно вернуть ошибку, если нужно, чтобы Create всегда возвращал ошибку при проблемах с Redis
+		// return am, err
+	}
+
+	return am, err
 }
 
 func (p PostgresStorage) ReadOne(id string) (album, error) {
-	var album album
+	// Попытка получения данных из Redis
+	cachedAlbum, err := p.redisClient.Get("album:" + id).Result()
+	if err == nil {
+		var albums album
+		if err := json.Unmarshal([]byte(cachedAlbum), &albums); err == nil {
+			return albums, nil
+		}
+	}
+	// Если данных нет в Redis, делаем запрос к PostgreSQL
+	var albums album
 	row := p.db.QueryRow("select * from albums where id = $1", id)
-	err := row.Scan(&album.ID, &album.Title, &album.Artist, &album.Price)
+	err = row.Scan(&albums.ID, &albums.Title, &albums.Artist, &albums.Price)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return album, errors.New("not found")
+			return albums, errors.New("not found")
 		}
-		return album, err
+		return albums, err
 	}
-	return album, nil
+
+	// Сохранение полученного альбома в Redis
+	jsonAlbum, err := json.Marshal(albums)
+	if err != nil {
+		log.Println("Error caching album in Redis:", err)
+	} else {
+		err = p.redisClient.Set("album:"+id, jsonAlbum, p.cacheTTL).Err()
+		if err != nil {
+			log.Println("Error caching album in Redis:", err)
+		}
+	}
+	return albums, nil
 }
 
-func (p PostgresStorage) Read() []album {
+func (p PostgresStorage) Read() ([]album, error) {
 	// Попытка получения данных из Redis
 	cachedAlbums, err := p.redisClient.Get("albums").Result()
-	if err == redis.Nil {
-		// Данные не найдены в Redis, получаем из базы данных
+	if err == nil {
 		var albums []album
-		rows, _ := p.db.Query("select * from albums")
-		defer rows.Close()
-
-		for rows.Next() {
-			var a album
-			rows.Scan(&a.ID, &a.Title, &a.Artist, &a.Price)
-			albums = append(albums, a)
+		if err := json.Unmarshal([]byte(cachedAlbums), &albums); err == nil {
+			return albums, nil
 		}
-		// Кэшируем полученные данные в Redis
-		cachedData, err := json.Marshal(albums)
-		if err != nil {
-			return nil
-		}
-
-		err = p.redisClient.Set("albums", cachedData, p.cacheTTL).Err()
-		if err != nil {
-			return nil
-		}
-		return albums
-	} else if err != nil {
-		// Ошибка Redis, логируем и получаем данные из базы данных
-		fmt.Println("Ошибка Redis:", err)
-		return nil
 	}
-	// Данные найдены в Redis, десериализуем и возвращаем
+	// Если данных нет в Redis, делаем запрос к PostgreSQL
 	var albums []album
-	if err := json.Unmarshal([]byte(cachedAlbums), &albums); err != nil {
-		return nil
+	rows, err := p.db.Query("select * from albums")
+	if err != nil {
+		log.Println("Error querying albums:", err)
+		return nil, err //, err
 	}
-	return albums
+	defer rows.Close()
 
+	for rows.Next() {
+		var a album
+		if err := rows.Scan(&a.ID, &a.Title, &a.Artist, &a.Price); err != nil {
+			return nil, err
+		}
+		albums = append(albums, a)
+	}
+	// Сохранение полученных данных в Redis
+	jsonAlbums, err := json.Marshal(albums)
+	if err != nil {
+		return nil, err
+	}
+	err = p.redisClient.Set("albums", jsonAlbums, p.cacheTTL).Err()
+	if err != nil {
+		log.Println("Error caching albums in Redis:", err)
+	}
+
+	return albums, err //, nil
+}
+
+func (p *PostgresStorage) clearCache(id string) error {
+	// Очистка кэша всех альбомов
+	err := p.redisClient.Del("albums").Err()
+	if err != nil {
+		log.Println("Error clearing albums cache in Redis:", err)
+	}
+
+	// Очистка кэша конкретного альбома
+	err = p.redisClient.Del("album:" + id).Err()
+	if err != nil {
+		log.Println("Error clearing album cache in Redis:", err)
+	}
+	return err
 }
 
 func (p PostgresStorage) Update(id string, a album) (album, error) {
 	result, _ := p.db.Exec("update albums set Title=$1, Artist=$2, Price=$3 where id=$4", a.Title, a.Artist, a.Price, id)
 	err := handleNotFound(result)
+	if err != nil {
+		return a, err
+	}
+
+	// Очистка кэша после успешного обновления
+	err = p.clearCache(id)
+	if err != nil {
+		return a, err // Передаем ошибку, если произошла ошибка при очистке кэша
+	}
 	return a, err
 }
 
 func (p PostgresStorage) Delete(id string) error {
 	result, _ := p.db.Exec("delete from albums where id=$1", id)
 	err := handleNotFound(result)
-	return err
+	if err != nil {
+		return err
+	}
+	// Очистка кэша после успешного удаления
+	err = p.clearCache(id)
+	if err != nil {
+		return err // Передаем ошибку, если произошла ошибка при очистке кэша
+	}
+	return nil
+
 }
 
 func handleNotFound(result sql.Result) error {
@@ -176,5 +252,10 @@ func handleNotFound(result sql.Result) error {
 }
 
 func NewStorage() Storage {
-	return NewPostgresStorage()
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",            //"some-redis:6379", // адрес вашего Redis-сервера
+		Password: os.Getenv("REDIS_PASSWORD"), //"pass",           // пароль, если установлен
+		DB:       0,                           // номер базы данных Redis
+	})
+	return NewPostgresStorage(redisClient)
 }
